@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webカメラ撮影スタジオ (最終完全版)</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            height: 100vh; 
+            overflow: hidden; 
+            background-color: #000;
+        }
+
+        /* ------------------------------------- */
+        /* 1. メイン映像エリア（デジタルズームのコンテナ） */
+        /* ------------------------------------- */
+        #video-main-area {
+            flex-grow: 1; 
+            width: 100%;
+            position: relative;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #ccc;
+            font-size: 1.2em;
+            text-align: center;
+            padding-bottom: 120px; 
+            /* ⭐デジタルズームで拡大された部分を隠す⭐ */
+            overflow: hidden; 
+        }
+        
+        #video { 
+            width: 100%; 
+            height: 100%;
+            object-fit: cover; 
+            visibility: hidden; 
+            /* ⭐ズームアニメーションを滑らかにする⭐ */
+            transition: transform 0.1s ease-out; 
+            /* 初期状態のtransformはJSで設定される */
+        }
+
+        #loading-message {
+            position: absolute;
+            z-index: 10;
+        }
+        
+        /* 映像上のズームコントロール */
+        .video-overlay-controls {
+            visibility: hidden; 
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 15px;
+            border-radius: 20px;
+            color: white;
+            display: flex;
+            align-items: center;
+            z-index: 20;
+        }
+        .video-overlay-controls label, .video-overlay-controls span {
+            margin-right: 10px;
+            white-space: nowrap;
+            font-size: 14px;
+        }
+        #zoom-slider {
+            width: 100px;
+        }
+
+
+        /* ------------------------------------- */
+        /* 2. コントロールバー（画面下部に固定） */
+        /* ------------------------------------- */
+        #control-bar {
+            width: 100%;
+            height: 120px; 
+            background-color: #222;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 20px;
+            box-sizing: border-box;
+            z-index: 30; 
+            
+            position: fixed; 
+            bottom: 0; 
+        }
+
+        /* シャッター/録画ボタンを中央に配置 */
+        #main-buttons {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        /* カメラ切り替えボタン */
+        #camera-switch-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid white;
+            background-color: #666;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* シャッター/録画ボタン */
+        #capture-btn, #video-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 5px solid white;
+            font-size: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+            padding: 0;
+        }
+        #capture-btn { background-color: #fff; color: #333; }
+        #capture-btn:hover { background-color: #eee; }
+        #video-btn { background-color: #f00; color: white; border-color: #f00;} 
+        #video-btn.recording { 
+            background-color: #ff5555; 
+            border-color: #fff;
+            animation: pulse 1s infinite alternate; 
+        }
+
+        @keyframes pulse {
+            from { opacity: 1; }
+            to { opacity: 0.7; }
+        }
+
+        /* ------------------------------------- */
+        /* 3. 撮影履歴エリア（コントロールバーの右端） */
+        /* ------------------------------------- */
+        #preview-area-wrapper {
+            width: 100px; 
+            height: 100px;
+            overflow: hidden; 
+            display: flex;
+            align-items: center;
+        }
+        #preview-area {
+            display: flex; 
+            gap: 10px;
+            overflow-x: auto; 
+            padding: 10px 0;
+            height: 100%;
+            box-sizing: border-box;
+            flex-direction: row-reverse; 
+        }
+        
+        .captured-card { 
+            flex-shrink: 0; 
+            width: 80px; 
+            height: 80px; 
+            border: 2px solid #fff;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .captured-img, .captured-video { 
+            width: 100%; 
+            height: 100%;
+            object-fit: cover;
+            display: block; 
+        }
+        
+        /* ダウンロードボタン */
+        #download-latest-btn {
+            background-color: #007bff;
+            color: white;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            visibility: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="video-main-area">
+        <div id="loading-message">
+            カメラへのアクセスを待機中です...<br>
+            ブラウザのポップアップで「許可」を選択してください。
+        </div>
+        
+        <video id="video" autoplay playsinline></video>
+        <div class="video-overlay-controls">
+            <label for="zoom-slider">Zoom:</label>
+            <input type="range" id="zoom-slider" min="1" max="3" step="0.1" value="1" disabled>
+            <span id="zoom-value">1.0x</span>
+        </div>
+    </div>
+    
+    <div id="control-bar">
+        <button id="download-latest-btn">⬇️ 最新を保存</button>
+
+        <div id="main-buttons">
+            <button id="camera-switch-btn" title="カメラ切り替え">🔄</button>
+            <button id="capture-btn">📸</button>
+            <button id="video-btn">●</button>
+        </div>
+
+        <div id="preview-area-wrapper">
+            <div id="preview-area"></div>
+        </div>
+    </div>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script src="script.js"></script>
+</body>
+</html>
